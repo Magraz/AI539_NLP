@@ -74,7 +74,7 @@ def get_vocab(corpus):
 
 #Load word vectors
 def get_embedding_index():
-    path_to_glove_file = "/home/magraz/AI539_NLP/HW2/word_vectors/glove.6B.50d.txt"
+    path_to_glove_file = "glove.6B.50d.txt"
 
     embeddings_index = {}
     with open(path_to_glove_file) as f:

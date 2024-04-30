@@ -116,9 +116,9 @@ class PartOfSpeechLSTM(torch.nn.Module) :
         self.input_dim = input_size
         self.hidden_dim = hidden_dim
 
-        self.lstm = nn.LSTM(input_size=self.input_dim, hidden_size=self.hidden_dim, num_layers=self.num_layers, batch_first=True, bidirectional=True)
-        self.fc = nn.Linear(self.hidden_dim*2, 300)
-        self.output = nn.Linear(300, 17)
+        self.lstm = nn.LSTM(input_size=self.input_dim, hidden_size=self.hidden_dim, num_layers=self.num_layers, batch_first=True, bidirectional=True).to(dev)
+        self.fc = nn.Linear(self.hidden_dim*2, 300).to(dev)
+        self.output = nn.Linear(300, 17).to(dev)
       
         self.leaky = nn.LeakyReLU()
         self.softmax = nn.Softmax()

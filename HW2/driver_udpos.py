@@ -19,10 +19,10 @@ import numpy as np
 
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence, pad_sequence
 import torch.nn as nn
-import torch.nn.functional as F
 
-# Imports for progress bar
 from tqdm import tqdm
+
+import pickle
  
 
 # Set random seed for python and torch to enable reproducibility (at least on the same hardware)
@@ -74,7 +74,7 @@ def get_vocab(corpus):
 
 #Load word vectors
 def get_embedding_index():
-    path_to_glove_file = "/home/magraz/AI539_NLP/HW2/word_vectors/glove.6B.100d.txt"
+    path_to_glove_file = "/home/magraz/AI539_NLP/HW2/word_vectors/glove.6B.50d.txt"
 
     embeddings_index = {}
     with open(path_to_glove_file) as f:
@@ -88,7 +88,7 @@ def get_embedding_index():
 # Prepare embedding matrix
 def get_embedding_matrix(vocab, embeddings_index):
     num_tokens = vocab.size + 2
-    embedding_dim = 100
+    embedding_dim = 50
     hits = 0
     misses = 0
 
@@ -109,15 +109,15 @@ def get_embedding_matrix(vocab, embeddings_index):
 
 class PartOfSpeechLSTM(torch.nn.Module) :
 
-    def __init__(self, input_size=100, hidden_dim=200) :
+    def __init__(self, input_size=50, hidden_dim=100) :
         super().__init__()
 
         self.num_layers = 1
         self.input_dim = input_size
         self.hidden_dim = hidden_dim
 
-        self.lstm = nn.LSTM(input_size=self.input_dim, hidden_size=self.hidden_dim, num_layers=self.num_layers, batch_first=True)
-        self.fc = nn.Linear(self.hidden_dim, 300)
+        self.lstm = nn.LSTM(input_size=self.input_dim, hidden_size=self.hidden_dim, num_layers=self.num_layers, batch_first=True, bidirectional=True)
+        self.fc = nn.Linear(self.hidden_dim*2, 300)
         self.output = nn.Linear(300, 17)
       
         self.leaky = nn.LeakyReLU()
@@ -174,6 +174,9 @@ def map_y_batch(y_map, y_batch, max_len):
     return y_batch_vectors
 
 def train_model(model, train_loader, x_map, y_map, vocab, epochs=2000, lr=1e-3):
+    #Train loss
+    train_loss = []
+
     # Define a cross entropy loss function
     crit = torch.nn.CrossEntropyLoss()
 
@@ -227,9 +230,21 @@ def train_model(model, train_loader, x_map, y_map, vocab, epochs=2000, lr=1e-3):
 
         if i % 10 == 0:
             logging.info("epoch %d train loss %.3f" % (i, sum_loss/total))#, val_loss, val_acc))
+            train_loss.append(sum_loss/total)
+
     
+    #Store model
     logging.info('Saving model...')
-    torch.save(model, 'model.pth')
+    torch.save({
+            'epoch': epochs,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'loss': loss,
+            }, 'model.pth')
+    
+    #Store loss
+    with open('train_loss.pickle', 'wb') as handle:
+        pickle.dump(train_loss, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 def main():
     # Create data pipeline
@@ -272,4 +287,8 @@ def main():
 if __name__== "__main__":
     main()
 
+    with open('train_loss.pickle', 'rb') as handle:
+        train_loss = pickle.load(handle)
+
+    print(train_loss)
 

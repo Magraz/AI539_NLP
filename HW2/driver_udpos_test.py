@@ -133,7 +133,7 @@ def train_model(model, train_loader, x_map, y_map, epochs=2000, lr=1e-2):
             sum_loss += loss.item()*y.shape[0]
             total += y.shape[0]
 
-            train_loss.append(sum_loss/total)
+        train_loss.append(sum_loss/total)
 
         if i % 10 == 0:
             logging.info("epoch %d train loss %.3f, train acc %.3f" % (i, sum_loss/total, correct/total))#, val_loss, val_acc))

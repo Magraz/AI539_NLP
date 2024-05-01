@@ -151,7 +151,7 @@ def train_model(model, train_loader, x_map, y_map, epochs=2000, lr=1e-2):
                 pickle_train_loss = []
                 with open('train_loss.pickle', 'rb') as handle:
                     pickle_train_loss = pickle.load(handle)
-                    pickle_train_loss.append(train_loss)
+                    pickle_train_loss+=(train_loss)
                     logging.info(f'Total Epochs: {len(pickle_train_loss)}')
             except FileNotFoundError:
                 logging.info('Writing new loss file...')

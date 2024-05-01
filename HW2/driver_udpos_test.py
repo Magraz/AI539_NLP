@@ -99,6 +99,14 @@ def train_model(model, train_loader, val_loader, x_map, y_map, epochs=1000, lr=1
     # (tends to speed convergence but often worse than a well tuned SGD schedule)
     optimizer = optim.Adam(parameters, lr=lr, weight_decay=1e-5)
 
+    #Train loss and acc
+    train_loss = []
+    train_acc = []
+
+    #Validation loss and acc
+    val_loss = []
+    val_acc = []
+
     # Main training loop over the number of epochs
     for i in tqdm(range(epochs), desc="Training: "):
         
@@ -107,10 +115,6 @@ def train_model(model, train_loader, val_loader, x_map, y_map, epochs=1000, lr=1
         sum_loss = 0.0
         total = 0
         correct = 0
-
-        #Train loss and acc
-        train_loss = []
-        train_acc = []
 
         # for each batch in the dataset
         for _, (x, y, _) in enumerate(train_loader):
@@ -144,10 +148,6 @@ def train_model(model, train_loader, val_loader, x_map, y_map, epochs=1000, lr=1
             sum_loss = 0.0
             total = 0
             correct = 0
-            
-            #Validation loss and acc
-            val_loss = []
-            val_acc = []
 
             for _, (x, y, _) in enumerate(val_loader):
 
@@ -156,11 +156,11 @@ def train_model(model, train_loader, val_loader, x_map, y_map, epochs=1000, lr=1
 
                 y_pred = model(x)
 
-                loss = crit(y_pred, y).item()
+                loss = crit(y_pred, y)
 
                 pred = torch.max(y_pred, 1)[1]
                 correct += (pred == y).float().sum().item()
-                sum_loss += loss*y.shape[0]
+                sum_loss += loss.item()*y.shape[0]
                 total += y.shape[0]
             
             val_loss.append(sum_loss/total)

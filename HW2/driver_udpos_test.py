@@ -126,7 +126,7 @@ def train_model(model, train_loader, val_loader, x_map, y_map, epochs=1000, lr=1
 
     #Early stop
 
-    early_stopper = EarlyStopper(patience=3, min_delta=10)
+    early_stopper = EarlyStopper(patience=5, min_delta=.50)
 
     # Main training loop over the number of epochs
     for i in tqdm(range(epochs), desc="Training: "):

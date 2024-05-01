@@ -63,7 +63,7 @@ def prepare_sequence_y(batch, to_ix):
 # These will usually be more like 32 or 64 dimensional.
 # We will keep them small, so we can see how the weights change as we train.
 EMBEDDING_DIM = 64
-HIDDEN_DIM = 128
+HIDDEN_DIM = 64
 
 class LSTMTagger(nn.Module):
 
@@ -78,12 +78,12 @@ class LSTMTagger(nn.Module):
         self.lstm = nn.LSTM(embedding_dim, hidden_dim, batch_first=True, bidirectional=True).to(dev)
 
         # The linear layer that maps from hidden state space to tag space
-        self.hidden2tag = nn.Linear(hidden_dim*2, tagset_size).to(dev)
+        self.fc = nn.Linear(hidden_dim*2, tagset_size).to(dev)
 
     def forward(self, sentence):
         embeds = self.word_embeddings(sentence)
         lstm_out, _ = self.lstm(embeds.view(1, len(sentence), -1))
-        tag_space = self.hidden2tag(lstm_out.view(len(sentence), -1))
+        tag_space = self.fc(lstm_out.view(len(sentence), -1))
         tag_scores = F.softmax(tag_space, dim=1)
         return tag_scores
 
@@ -133,21 +133,30 @@ def train_model(model, train_loader, x_map, y_map, epochs=2000, lr=1e-2):
             sum_loss += loss.item()*y.shape[0]
             total += y.shape[0]
 
+            train_loss.append(sum_loss/total)
+
         if i % 10 == 0:
             logging.info("epoch %d train loss %.3f, train acc %.3f" % (i, sum_loss/total, correct/total))#, val_loss, val_acc))
-            train_loss.append(sum_loss/total)
-    
-    #Store model
-    logging.info('Saving model...')
-    torch.save({
-            'epoch': epochs,
-            'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            }, 'model.pth')
-    
-    #Store loss
-    with open('train_loss.pickle', 'wb') as handle:
-        pickle.dump(train_loss, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+            #Store model
+            logging.info('Saving model...')
+            torch.save({
+                    'epoch': i,
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    }, 'model.pth')
+            
+            #Store loss
+            pickle_train_loss = []
+            with open('train_loss.pickle', 'rb') as handle:
+                pickle_train_loss = pickle.load(handle)
+                pickle_train_loss.append(train_loss)
+                logging.info(f'Total Epochs: {len(pickle_train_loss)}')
+
+            with open('train_loss.pickle', 'wb') as handle:
+                pickle.dump(pickle_train_loss, handle, protocol=pickle.HIGHEST_PROTOCOL)
+            
+            train_loss = []
 
 def main():
     # Create data pipeline

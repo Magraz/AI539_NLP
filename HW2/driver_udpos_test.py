@@ -87,6 +87,23 @@ class LSTMTagger(nn.Module):
         # tag_scores = F.softmax(tag_space, dim=1)
         return tag_space
 
+class EarlyStopper:
+    def __init__(self, patience=1, min_delta=0):
+        self.patience = patience
+        self.min_delta = min_delta
+        self.counter = 0
+        self.min_validation_loss = float('inf')
+
+    def early_stop(self, validation_loss):
+        if validation_loss < self.min_validation_loss:
+            self.min_validation_loss = validation_loss
+            self.counter = 0
+        elif validation_loss > (self.min_validation_loss + self.min_delta):
+            self.counter += 1
+            if self.counter >= self.patience:
+                return True
+        return False
+
 def train_model(model, train_loader, val_loader, x_map, y_map, epochs=1000, lr=1e-3):
     
     # Define a cross entropy loss function
@@ -106,6 +123,10 @@ def train_model(model, train_loader, val_loader, x_map, y_map, epochs=1000, lr=1
     #Validation loss and acc
     val_loss = []
     val_acc = []
+
+    #Early stop
+
+    early_stopper = EarlyStopper(patience=3, min_delta=10)
 
     # Main training loop over the number of epochs
     for i in tqdm(range(epochs), desc="Training: "):
@@ -166,7 +187,7 @@ def train_model(model, train_loader, val_loader, x_map, y_map, epochs=1000, lr=1
             val_loss.append(sum_loss/total)
             val_acc.append(correct/total)
 
-        if i % 10 == 0:
+        if i % 5 == 0:
 
             logging.info("epoch %d train loss %.3f, train acc %.3f val loss %.3f, val acc %.3f" % (i, train_loss[-1], train_acc[-1], val_loss[-1], val_acc[-1]))#, val_loss, val_acc))
 
@@ -204,6 +225,10 @@ def train_model(model, train_loader, val_loader, x_map, y_map, epochs=1000, lr=1
 
             with open('loss_acc.pickle', 'wb') as handle:
                 pickle.dump(loss_acc, handle, protocol=pickle.HIGHEST_PROTOCOL)
+            
+            #Stop early
+            if early_stopper.early_stop(val_loss[-1]):
+                break
 
 def main():
     # Create data pipeline

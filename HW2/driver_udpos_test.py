@@ -17,6 +17,8 @@ from torch.utils .data.backward_compatibility import worker_init_fn
 
 import random
 
+import numpy as np
+
 from tqdm import tqdm
 
 import pickle
@@ -43,9 +45,9 @@ def prepare_sequence_x(batch, to_ix):
     for s in batch:
         seq += s
     
-    idxs = [to_ix.get(w, to_ix['UNK']) for w in seq]
+    idxs = np.array([to_ix.get(w.lower(), to_ix['unk']) for w in seq])
 
-    return torch.tensor(idxs, dtype=torch.long).to(dev)
+    return torch.from_numpy(idxs).to(dev)
 
 def prepare_sequence_y(batch, to_ix):
     seq = []
@@ -57,18 +59,12 @@ def prepare_sequence_y(batch, to_ix):
 
     return torch.tensor(idxs, dtype=torch.long).to(dev)
 
-# These will usually be more like 32 or 64 dimensional.
-# We will keep them small, so we can see how the weights change as we train.
-EMBEDDING_DIM = 32
-HIDDEN_DIM = 32
 
 class LSTMTagger(nn.Module):
 
-    def __init__(self, embedding_dim, hidden_dim, vocab_size, tagset_size):
+    def __init__(self, embedding_dim, hidden_dim, tagset_size):
         super(LSTMTagger, self).__init__()
         self.hidden_dim = hidden_dim
-
-        self.word_embeddings = nn.Embedding(vocab_size, embedding_dim).to(dev)
 
         # The LSTM takes word embeddings as inputs, and outputs hidden states
         # with dimensionality hidden_dim.
@@ -78,8 +74,7 @@ class LSTMTagger(nn.Module):
         self.fc = nn.Linear(hidden_dim*2, tagset_size).to(dev)
 
     def forward(self, sentence):
-        embeds = self.word_embeddings(sentence)
-        lstm_out, _ = self.lstm(embeds.view(1, len(sentence), -1))
+        lstm_out, _ = self.lstm(sentence.view(1, len(sentence), -1))
         tag_space = self.fc(lstm_out.view(len(sentence), -1))
         # tag_scores = F.softmax(tag_space, dim=1)
         return tag_space
@@ -227,6 +222,19 @@ def train_model(model, train_loader, val_loader, x_map, y_map, epochs=40, lr=1e-
             if early_stopper.early_stop(val_loss[-1]):
                 break
 
+#Load word vectors
+def get_embedding_map():
+    path_to_glove_file = "glove.6B.50d.txt"
+
+    embeddings_map = {}
+    with open(path_to_glove_file) as f:
+        for line in f:
+            word, coefs = line.split(maxsplit=1)
+            coefs = np.fromstring(coefs, "f", sep=" ")
+            embeddings_map[word] = coefs
+    
+    return embeddings_map
+
 def main():
     # Create data pipeline
     train_data = datasets.UDPOS(split ='train')
@@ -245,15 +253,6 @@ def main():
         worker_init_fn = worker_init_fn ,
         drop_last = True, collate_fn = pad_collate)
     
-    #Set idx for words
-    word_to_ix = {}
-    for _, (x, _, _) in enumerate(train_loader):
-        for sent in x:
-            for word in sent:
-                if word not in word_to_ix:  # word has not been assigned an index yet
-                    word_to_ix[word] = len(word_to_ix)  # Assign each word with a unique index
-    
-    word_to_ix['UNK'] = len(word_to_ix) 
 
     #Set idx for tags
     tag_to_ix = {}
@@ -261,9 +260,14 @@ def main():
     for i, tag in enumerate(tags):
         tag_to_ix[tag] = i
 
-    model = LSTMTagger(EMBEDDING_DIM, HIDDEN_DIM, len(word_to_ix), len(tag_to_ix))
+    emb_map = get_embedding_map()
 
-    train_model(model, train_loader, val_loader, x_map=word_to_ix, y_map=tag_to_ix)
+    input_dim = 50
+    hidden_dim = 50
+
+    model = LSTMTagger(input_dim, hidden_dim, len(tag_to_ix))
+
+    train_model(model, train_loader, val_loader, x_map=emb_map, y_map=tag_to_ix)
 
 if __name__== "__main__":
     main()

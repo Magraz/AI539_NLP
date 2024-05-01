@@ -170,8 +170,6 @@ def main():
     
     word_to_ix['UNK'] = len(word_to_ix) 
 
-    print(len(word_to_ix))
-
     #Set idx for tags
     tag_to_ix = {}
     tags = ['ADJ', 'ADP', 'ADV', 'AUX', 'CCONJ', 'DET', 'INTJ', 'NOUN', 'NUM', 'PART', 'PRON', 'PROPN', 'PUNCT', 'SCONJ', 'SYM', 'VERB', 'X']

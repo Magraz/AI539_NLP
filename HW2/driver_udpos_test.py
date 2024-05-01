@@ -84,10 +84,10 @@ class LSTMTagger(nn.Module):
         embeds = self.word_embeddings(sentence)
         lstm_out, _ = self.lstm(embeds.view(1, len(sentence), -1))
         tag_space = self.fc(lstm_out.view(len(sentence), -1))
-        tag_scores = F.softmax(tag_space, dim=1)
-        return tag_scores
+        # tag_scores = F.softmax(tag_space, dim=1)
+        return tag_space
 
-def train_model(model, train_loader, val_loader, x_map, y_map, epochs=1000, lr=1e-2):
+def train_model(model, train_loader, val_loader, x_map, y_map, epochs=1000, lr=1e-3):
     
     # Define a cross entropy loss function
     crit = nn.CrossEntropyLoss()
@@ -99,6 +99,14 @@ def train_model(model, train_loader, val_loader, x_map, y_map, epochs=1000, lr=1
     # (tends to speed convergence but often worse than a well tuned SGD schedule)
     optimizer = optim.Adam(parameters, lr=lr, weight_decay=1e-5)
 
+    #Train loss and acc
+    train_loss = []
+    train_acc = []
+
+    #Validation loss and acc
+    val_loss = []
+    val_acc = []
+
     # Main training loop over the number of epochs
     for i in tqdm(range(epochs), desc="Training: "):
         
@@ -107,10 +115,6 @@ def train_model(model, train_loader, val_loader, x_map, y_map, epochs=1000, lr=1
         sum_loss = 0.0
         total = 0
         correct = 0
-
-        #Train loss and acc
-        train_loss = []
-        train_acc = []
 
         # for each batch in the dataset
         for _, (x, y, _) in enumerate(train_loader):
@@ -139,31 +143,28 @@ def train_model(model, train_loader, val_loader, x_map, y_map, epochs=1000, lr=1
         train_acc.append(correct/total)
 
         #Validation loop
-        model.eval()
-        sum_loss = 0.0
-        total = 0
-        correct = 0
-        
-        #Validation loss and acc
-        val_loss = []
-        val_acc = []
+        with torch.no_grad():
+            model.eval()
+            sum_loss = 0.0
+            total = 0
+            correct = 0
 
-        for _, (x, y, _) in enumerate(val_loader):
+            for _, (x, y, _) in enumerate(val_loader):
 
-            x = prepare_sequence_x(x, x_map)
-            y = prepare_sequence_y(y, y_map)
+                x = prepare_sequence_x(x, x_map)
+                y = prepare_sequence_y(y, y_map)
 
-            y_pred = model(x)
+                y_pred = model(x)
 
-            loss = crit(y_pred, y).item()
+                loss = crit(y_pred, y)
 
-            pred = torch.max(y_pred, 1)[1]
-            correct += (pred == y).float().sum().item()
-            sum_loss += loss*y.shape[0]
-            total += y.shape[0]
-        
-        val_loss.append(sum_loss/total)
-        val_acc.append(correct/total)
+                pred = torch.max(y_pred, 1)[1]
+                correct += (pred == y).float().sum().item()
+                sum_loss += loss.item()*y.shape[0]
+                total += y.shape[0]
+            
+            val_loss.append(sum_loss/total)
+            val_acc.append(correct/total)
 
         if i % 10 == 0:
 

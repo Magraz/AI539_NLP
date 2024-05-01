@@ -84,7 +84,7 @@ class LSTMTagger(nn.Module):
         embeds = self.word_embeddings(sentence)
         lstm_out, _ = self.lstm(embeds.view(1, len(sentence), -1))
         tag_space = self.hidden2tag(lstm_out.view(len(sentence), -1))
-        tag_scores = F.log_softmax(tag_space, dim=1)
+        tag_scores = F.softmax(tag_space, dim=1)
         return tag_scores
 
 def train_model(model, train_loader, x_map, y_map, epochs=2000, lr=1e-2):

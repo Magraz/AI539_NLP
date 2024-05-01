@@ -87,7 +87,7 @@ class LSTMTagger(nn.Module):
         tag_scores = F.softmax(tag_space, dim=1)
         return tag_scores
 
-def train_model(model, train_loader, val_loader, x_map, y_map, epochs=2000, lr=1e-1):
+def train_model(model, train_loader, val_loader, x_map, y_map, epochs=1000, lr=1e-2):
     
     # Define a cross entropy loss function
     crit = nn.CrossEntropyLoss()

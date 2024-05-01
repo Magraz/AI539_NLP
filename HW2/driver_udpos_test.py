@@ -9,14 +9,11 @@ logging.basicConfig(
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
 
 from torch.utils.data import DataLoader
 from torchtext import datasets
 from torch.utils .data.backward_compatibility import worker_init_fn
-
-import numpy as np
 
 import random
 
@@ -62,8 +59,8 @@ def prepare_sequence_y(batch, to_ix):
 
 # These will usually be more like 32 or 64 dimensional.
 # We will keep them small, so we can see how the weights change as we train.
-EMBEDDING_DIM = 64
-HIDDEN_DIM = 64
+EMBEDDING_DIM = 32
+HIDDEN_DIM = 32
 
 class LSTMTagger(nn.Module):
 
@@ -104,7 +101,7 @@ class EarlyStopper:
                 return True
         return False
 
-def train_model(model, train_loader, val_loader, x_map, y_map, epochs=1000, lr=1e-3):
+def train_model(model, train_loader, val_loader, x_map, y_map, epochs=40, lr=1e-3):
     
     # Define a cross entropy loss function
     crit = nn.CrossEntropyLoss()
@@ -126,7 +123,7 @@ def train_model(model, train_loader, val_loader, x_map, y_map, epochs=1000, lr=1
 
     #Early stop
 
-    early_stopper = EarlyStopper(patience=5, min_delta=.50)
+    early_stopper = EarlyStopper(patience=5, min_delta=.20)
 
     # Main training loop over the number of epochs
     for i in tqdm(range(epochs), desc="Training: "):

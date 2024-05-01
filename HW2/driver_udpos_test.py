@@ -87,19 +87,17 @@ class LSTMTagger(nn.Module):
         tag_scores = F.softmax(tag_space, dim=1)
         return tag_scores
 
-def train_model(model, train_loader, x_map, y_map, epochs=2000, lr=1e-2):
-    #Train loss
-    train_loss = []
-
+def train_model(model, train_loader, val_loader, x_map, y_map, epochs=2000, lr=1e-1):
+    
     # Define a cross entropy loss function
-    crit = torch.nn.CrossEntropyLoss()
+    crit = nn.CrossEntropyLoss()
 
     # Collect all the learnable parameters in our model and pass them to an optimizer
     parameters = filter(lambda p: p.requires_grad, model.parameters())
     
     # Adam is a version of SGD with dynamic learning rates 
     # (tends to speed convergence but often worse than a well tuned SGD schedule)
-    optimizer = torch.optim.Adam(parameters, lr=lr, weight_decay=1e-5)
+    optimizer = optim.Adam(parameters, lr=lr, weight_decay=1e-5)
 
     # Main training loop over the number of epochs
     for i in tqdm(range(epochs), desc="Training: "):
@@ -109,6 +107,10 @@ def train_model(model, train_loader, x_map, y_map, epochs=2000, lr=1e-2):
         sum_loss = 0.0
         total = 0
         correct = 0
+
+        #Train loss and acc
+        train_loss = []
+        train_acc = []
 
         # for each batch in the dataset
         for _, (x, y, _) in enumerate(train_loader):
@@ -129,14 +131,43 @@ def train_model(model, train_loader, x_map, y_map, epochs=2000, lr=1e-2):
 
             # compute loss and accuracy to report epoch level statitics
             pred = torch.max(y_pred, 1)[1]
-            correct += (pred == y).float().sum()
+            correct += (pred == y).float().sum().item()
             sum_loss += loss.item()*y.shape[0]
             total += y.shape[0]
 
         train_loss.append(sum_loss/total)
+        train_acc.append(correct/total)
+
+        #Validation loop
+        model.eval()
+        sum_loss = 0.0
+        total = 0
+        correct = 0
+        
+        #Validation loss and acc
+        val_loss = []
+        val_acc = []
+
+        for _, (x, y, _) in enumerate(val_loader):
+
+            x = prepare_sequence_x(x, x_map)
+            y = prepare_sequence_y(y, y_map)
+
+            y_pred = model(x)
+
+            loss = crit(y_pred, y).item()
+
+            pred = torch.max(y_pred, 1)[1]
+            correct += (pred == y).float().sum().item()
+            sum_loss += loss*y.shape[0]
+            total += y.shape[0]
+        
+        val_loss.append(sum_loss/total)
+        val_acc.append(correct/total)
 
         if i % 10 == 0:
-            logging.info("epoch %d train loss %.3f, train acc %.3f" % (i, sum_loss/total, correct/total))#, val_loss, val_acc))
+
+            logging.info("epoch %d train loss %.3f, train acc %.3f val loss %.3f, val acc %.3f" % (i, train_loss[-1], train_acc[-1], val_loss[-1], val_acc[-1]))#, val_loss, val_acc))
 
             #Store model
             logging.info('Saving model...')
@@ -147,29 +178,46 @@ def train_model(model, train_loader, x_map, y_map, epochs=2000, lr=1e-2):
                     }, 'model.pth')
             
             #Store loss
+            loss_acc = {'train_loss': train_loss, 
+                        'train_acc': train_acc,
+                        'val_loss': val_loss,
+                        'val_acc': val_acc
+                        }
+            pickle_loss_acc = {}
+
             try:
-                pickle_train_loss = []
-                with open('train_loss.pickle', 'rb') as handle:
-                    pickle_train_loss = pickle.load(handle)
-                    pickle_train_loss+=(train_loss)
-                    logging.info(f'Total Epochs: {len(pickle_train_loss)}')
+                with open('loss_acc.pickle', 'rb') as handle:
+
+                    pickle_loss_acc = pickle.load(handle)
+                    pickle_loss_acc['train_loss'] += train_loss
+                    pickle_loss_acc['train_acc'] += train_acc
+                    pickle_loss_acc['val_loss'] += val_loss
+                    pickle_loss_acc['val_acc'] += val_acc
+
+                    logging.info(f"Total Epochs: {len(pickle_loss_acc['train_loss'])}")
+
             except FileNotFoundError:
                 logging.info('Writing new loss file...')
-                with open('train_loss.pickle', 'wb') as handle:
-                    pickle.dump(train_loss, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                with open('loss_acc.pickle', 'wb') as handle:
+                    pickle.dump(loss_acc, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-            with open('train_loss.pickle', 'wb') as handle:
-                pickle.dump(pickle_train_loss, handle, protocol=pickle.HIGHEST_PROTOCOL)
-            
-            train_loss = []
+            with open('loss_acc.pickle', 'wb') as handle:
+                pickle.dump(loss_acc, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 def main():
     # Create data pipeline
     train_data = datasets.UDPOS(split ='train')
+    val_data = datasets.UDPOS(split= 'valid')
 
-    # Make data loader
+    # Make data loaders
     train_loader = DataLoader(
         dataset = train_data, batch_size =5,
+        shuffle = True, num_workers =1 ,
+        worker_init_fn = worker_init_fn ,
+        drop_last = True, collate_fn = pad_collate)
+    
+    val_loader = DataLoader(
+        dataset = val_data, batch_size =5,
         shuffle = True, num_workers =1 ,
         worker_init_fn = worker_init_fn ,
         drop_last = True, collate_fn = pad_collate)
@@ -192,7 +240,7 @@ def main():
 
     model = LSTMTagger(EMBEDDING_DIM, HIDDEN_DIM, len(word_to_ix), len(tag_to_ix))
 
-    train_model(model, train_loader, x_map=word_to_ix, y_map=tag_to_ix)
+    train_model(model, train_loader, val_loader, x_map=word_to_ix, y_map=tag_to_ix)
 
 if __name__== "__main__":
     main()

@@ -47,7 +47,7 @@ for i, tag in enumerate(tags):
     tag_to_idx[tag] = i
     idx_to_tag[i] = tag
 
-#Get pre trained word vectors
+#Get pre trained word vectors into embedding map
 path_to_glove_file = "glove.6B.50d.txt"
 
 embeddings_map = {}
@@ -123,7 +123,7 @@ class EarlyStopper:
                 return True
         return False
 
-def train_model(model, train_loader, val_loader, x_map, y_map, epochs=15, lr=1e-3):
+def train_model(model, train_loader, val_loader, x_map, y_map, epochs=20, lr=1e-3):
     
     # Define a cross entropy loss function
     crit = nn.CrossEntropyLoss()
@@ -247,6 +247,7 @@ def train_model(model, train_loader, val_loader, x_map, y_map, epochs=15, lr=1e-
             
             #Stop early
             if early_stopper.early_stop(val_loss[-1]):
+                logging.info(f'Stopped early at {i} epochs')
                 break
 
 
@@ -284,11 +285,36 @@ def test():
         worker_init_fn = worker_init_fn ,
         drop_last = True, collate_fn = pad_collate)
 
-    model = LSTMTagger(50, 50, 17)
+    model = LSTMTagger(50, 50, len(tag_to_idx))
 
     model.load_state_dict(torch.load('/home/magraz/AI539_NLP/HW2/model_1.pth', map_location=dev)['model_state_dict'])
 
-    model.eval()
+    #Train loss and acc
+    test_loss = []
+    test_acc = []
+
+    crit = nn.CrossEntropyLoss()
+
+    with torch.no_grad():
+        model.eval()
+        sum_loss = 0.0
+        total = 0
+        correct = 0
+
+        for _, (x, y, _) in enumerate(test_loader):
+
+            x = prepare_sequence_x(x, embeddings_map)
+            y = prepare_sequence_y(y, tag_to_idx)
+
+            y_pred = model(x)
+
+            loss = crit(y_pred, y)
+
+            pred = torch.max(y_pred, 1)[1]
+            correct += (pred == y).float().sum().item()
+            sum_loss += loss.item()*y.shape[0]
+            total += x.shape[0]
+        
 
     input= [['The', 'old', 'man', 'the', 'boat', '.'],
             ['The', 'complex', 'houses', 'married', 'and', 'single', 'soldiers', 'and', 'their','families', '.'],

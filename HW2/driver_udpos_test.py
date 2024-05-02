@@ -18,6 +18,8 @@ from torch.utils .data.backward_compatibility import worker_init_fn
 import nltk
 from nltk.stem import WordNetLemmatizer
 
+import matplotlib.pyplot as plt
+
 import random
 
 import numpy as np
@@ -56,6 +58,9 @@ with open(path_to_glove_file) as f:
         word, coefs = line.split(maxsplit=1)
         coefs = np.fromstring(coefs, "f", sep=" ")
         embeddings_map[word] = coefs
+
+emb_dim = 50
+hidden_dim = 50
 
 # Function to combine data elements from a batch
 def pad_collate(batch):
@@ -123,7 +128,7 @@ class EarlyStopper:
                 return True
         return False
 
-def train_model(model, train_loader, val_loader, x_map, y_map, epochs=20, lr=1e-3):
+def train_model(model, train_loader, val_loader, x_map, y_map, epochs=31, lr=1e-3):
     
     # Define a cross entropy loss function
     crit = nn.CrossEntropyLoss()
@@ -206,7 +211,7 @@ def train_model(model, train_loader, val_loader, x_map, y_map, epochs=20, lr=1e-
             val_loss.append(sum_loss/total)
             val_acc.append(correct/total)
 
-        if i % 5 == 0:
+        if i % 2 == 0:
 
             logging.info("epoch %d train loss %.3f, train acc %.3f val loss %.3f, val acc %.3f" % (i, train_loss[-1], train_acc[-1], val_loss[-1], val_acc[-1]))#, val_loss, val_acc))
 
@@ -269,10 +274,7 @@ def main():
         worker_init_fn = worker_init_fn ,
         drop_last = True, collate_fn = pad_collate)
 
-    input_dim = 50
-    hidden_dim = 50
-
-    model = LSTMTagger(input_dim, hidden_dim, len(tag_to_idx))
+    model = LSTMTagger(emb_dim, hidden_dim, len(tag_to_idx))
 
     train_model(model, train_loader, val_loader, x_map=embeddings_map, y_map=tag_to_idx)
 
@@ -285,15 +287,13 @@ def test():
         worker_init_fn = worker_init_fn ,
         drop_last = True, collate_fn = pad_collate)
 
-    model = LSTMTagger(50, 50, len(tag_to_idx))
+    model = LSTMTagger(emb_dim, hidden_dim, len(tag_to_idx))
 
     model.load_state_dict(torch.load('/home/magraz/AI539_NLP/HW2/model_1.pth', map_location=dev)['model_state_dict'])
 
     #Train loss and acc
     test_loss = []
     test_acc = []
-
-    crit = nn.CrossEntropyLoss()
 
     with torch.no_grad():
         model.eval()
@@ -308,38 +308,49 @@ def test():
 
             y_pred = model(x)
 
-            loss = crit(y_pred, y)
-
             pred = torch.max(y_pred, 1)[1]
             correct += (pred == y).float().sum().item()
-            sum_loss += loss.item()*y.shape[0]
             total += x.shape[0]
+
+            test_acc.append(correct/total)
+    
+    return test_acc
         
 
-    input= [['The', 'old', 'man', 'the', 'boat', '.'],
-            ['The', 'complex', 'houses', 'married', 'and', 'single', 'soldiers', 'and', 'their','families', '.'],
-            ['The', 'man', 'who', 'hunts', 'ducks', 'out', 'on', 'weekends', '.']]
+    # input= [['The', 'old', 'man', 'the', 'boat', '.'],
+    #         ['The', 'complex', 'houses', 'married', 'and', 'single', 'soldiers', 'and', 'their','families', '.'],
+    #         ['The', 'man', 'who', 'hunts', 'ducks', 'out', 'on', 'weekends', '.']]
 
-    x = prepare_sequence_x(input, embeddings_map)
+    # x = prepare_sequence_x(input, embeddings_map)
 
-    y_pred = model(x)
+    # y_pred = model(x)
 
-    pred = torch.max(y_pred, 1)[1]
+    # pred = torch.max(y_pred, 1)[1]
 
-    result = [idx_to_tag[idx] for idx in pred.tolist()]
+    # result = [idx_to_tag[idx] for idx in pred.tolist()]
 
-    print(input[0])
-    print(result[0:len(input[0])])
+    # print(input[0])
+    # print(result[0:len(input[0])])
 
-    print(input[1])
-    print(result[len(input[0]):len(input[0])+len(input[1])])
+    # print(input[1])
+    # print(result[len(input[0]):len(input[0])+len(input[1])])
 
-    print(input[2])
-    print(result[len(input[0])+len(input[1]):len(input[0])+len(input[1])+len(input[2])])
+    # print(input[2])
+    # print(result[len(input[0])+len(input[1]):len(input[0])+len(input[1])+len(input[2])])
 
 if __name__== "__main__":
     main()
-    #test()
+    # test_acc = test()
+
+    # words = range(1, len(test_acc) + 1)
+
+
+    # plt.plot(words, test_acc, 'r', label='Validation accuracy')
+    # plt.title('Test Accuracy')
+    # plt.xlabel('Words')
+    # plt.ylabel('Accuracy')
+
+    # plt.show()
 
     
 

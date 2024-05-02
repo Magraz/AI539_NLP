@@ -15,6 +15,9 @@ from torch.utils.data import DataLoader
 from torchtext import datasets
 from torch.utils .data.backward_compatibility import worker_init_fn
 
+import nltk
+from nltk.stem import WordNetLemmatizer
+
 import random
 
 import numpy as np
@@ -29,6 +32,30 @@ torch.manual_seed(42)
 
 # Determine if a GPU is available for use, define as global variable
 dev = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+
+#Get lemmatizer
+nltk.download('wordnet')
+nltk.download('punkt')
+    
+lemmatizer = WordNetLemmatizer()
+
+#Set idx for tags
+tag_to_idx = {}
+idx_to_tag = {}
+tags = ['ADJ', 'ADP', 'ADV', 'AUX', 'CCONJ', 'DET', 'INTJ', 'NOUN', 'NUM', 'PART', 'PRON', 'PROPN', 'PUNCT', 'SCONJ', 'SYM', 'VERB', 'X']
+for i, tag in enumerate(tags):
+    tag_to_idx[tag] = i
+    idx_to_tag[i] = tag
+
+#Get pre trained word vectors
+path_to_glove_file = "glove.6B.50d.txt"
+
+embeddings_map = {}
+with open(path_to_glove_file) as f:
+    for line in f:
+        word, coefs = line.split(maxsplit=1)
+        coefs = np.fromstring(coefs, "f", sep=" ")
+        embeddings_map[word] = coefs
 
 # Function to combine data elements from a batch
 def pad_collate(batch):
@@ -45,7 +72,7 @@ def prepare_sequence_x(batch, to_ix):
     for s in batch:
         seq += s
     
-    idxs = np.array([to_ix.get(w.lower(), to_ix['unk']) for w in seq])
+    idxs = np.array([to_ix.get(lemmatizer.lemmatize(w.lower()), to_ix['unk']) for w in seq])
 
     return torch.from_numpy(idxs).to(dev)
 
@@ -96,7 +123,7 @@ class EarlyStopper:
                 return True
         return False
 
-def train_model(model, train_loader, val_loader, x_map, y_map, epochs=40, lr=1e-3):
+def train_model(model, train_loader, val_loader, x_map, y_map, epochs=15, lr=1e-3):
     
     # Define a cross entropy loss function
     crit = nn.CrossEntropyLoss()
@@ -118,7 +145,7 @@ def train_model(model, train_loader, val_loader, x_map, y_map, epochs=40, lr=1e-
 
     #Early stop
 
-    early_stopper = EarlyStopper(patience=5, min_delta=.20)
+    early_stopper = EarlyStopper(patience=2, min_delta=.10)
 
     # Main training loop over the number of epochs
     for i in tqdm(range(epochs), desc="Training: "):
@@ -222,18 +249,6 @@ def train_model(model, train_loader, val_loader, x_map, y_map, epochs=40, lr=1e-
             if early_stopper.early_stop(val_loss[-1]):
                 break
 
-#Load word vectors
-def get_embedding_map():
-    path_to_glove_file = "glove.6B.50d.txt"
-
-    embeddings_map = {}
-    with open(path_to_glove_file) as f:
-        for line in f:
-            word, coefs = line.split(maxsplit=1)
-            coefs = np.fromstring(coefs, "f", sep=" ")
-            embeddings_map[word] = coefs
-    
-    return embeddings_map
 
 def main():
     # Create data pipeline
@@ -252,22 +267,53 @@ def main():
         shuffle = True, num_workers =1 ,
         worker_init_fn = worker_init_fn ,
         drop_last = True, collate_fn = pad_collate)
-    
-
-    #Set idx for tags
-    tag_to_ix = {}
-    tags = ['ADJ', 'ADP', 'ADV', 'AUX', 'CCONJ', 'DET', 'INTJ', 'NOUN', 'NUM', 'PART', 'PRON', 'PROPN', 'PUNCT', 'SCONJ', 'SYM', 'VERB', 'X']
-    for i, tag in enumerate(tags):
-        tag_to_ix[tag] = i
-
-    emb_map = get_embedding_map()
 
     input_dim = 50
     hidden_dim = 50
 
-    model = LSTMTagger(input_dim, hidden_dim, len(tag_to_ix))
+    model = LSTMTagger(input_dim, hidden_dim, len(tag_to_idx))
 
-    train_model(model, train_loader, val_loader, x_map=emb_map, y_map=tag_to_ix)
+    train_model(model, train_loader, val_loader, x_map=embeddings_map, y_map=tag_to_idx)
+
+def test():
+    test_data = datasets.UDPOS(split= 'test')
+
+    test_loader = DataLoader(
+        dataset = test_data, batch_size =5,
+        shuffle = True, num_workers =1 ,
+        worker_init_fn = worker_init_fn ,
+        drop_last = True, collate_fn = pad_collate)
+
+    model = LSTMTagger(50, 50, 17)
+
+    model.load_state_dict(torch.load('/home/magraz/AI539_NLP/HW2/model_1.pth', map_location=dev)['model_state_dict'])
+
+    model.eval()
+
+    input= [['The', 'old', 'man', 'the', 'boat', '.'],
+            ['The', 'complex', 'houses', 'married', 'and', 'single', 'soldiers', 'and', 'their','families', '.'],
+            ['The', 'man', 'who', 'hunts', 'ducks', 'out', 'on', 'weekends', '.']]
+
+    x = prepare_sequence_x(input, embeddings_map)
+
+    y_pred = model(x)
+
+    pred = torch.max(y_pred, 1)[1]
+
+    result = [idx_to_tag[idx] for idx in pred.tolist()]
+
+    print(input[0])
+    print(result[0:len(input[0])])
+
+    print(input[1])
+    print(result[len(input[0]):len(input[0])+len(input[1])])
+
+    print(input[2])
+    print(result[len(input[0])+len(input[1]):len(input[0])+len(input[1])+len(input[2])])
 
 if __name__== "__main__":
     main()
+    #test()
+
+    
+

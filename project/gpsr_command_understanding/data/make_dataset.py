@@ -129,7 +129,7 @@ def main():
     if not os.path.isdir(pairs_out_path):
         os.mkdir(pairs_out_path)
     
-    grammar_dir = os.path.abspath(os.path.dirname(__file__) + "/../../resources/generator2018")
+    grammar_dir = '/home/AI539_NLP/project/resources/generator2018/objects.xml'
 
     generator = load_all_2018_by_cat(cmd_gen, grammar_dir)
 

@@ -1,6 +1,10 @@
 import sys
 from os.path import join
 
+sys.path.append("../..")
+
+print(sys.path)
+
 from gpsr_command_understanding.anonymizer import Anonymizer
 
 import itertools
@@ -121,7 +125,9 @@ def main():
 
     if args.force_overwrite and os.path.isdir(pairs_out_path):
         shutil.rmtree(pairs_out_path)
-    os.mkdir(pairs_out_path)
+
+    if not os.path.isdir(pairs_out_path):
+        os.mkdir(pairs_out_path)
     
     grammar_dir = os.path.abspath(os.path.dirname(__file__) + "/../../resources/generator2018")
 

@@ -133,10 +133,7 @@ def main():
 
     generator = load_all_2018_by_cat(cmd_gen, grammar_dir)
 
-    print(generator)
-
     pairs = [{}, {}, {}]
-    
     if args.anonymized:
         pairs = [pairs_without_placeholders(rules, semantics) for _, rules, _, semantics in generator]
     

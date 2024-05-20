@@ -334,6 +334,8 @@ def pairs_without_placeholders(rules, semantics, only_in_grammar=False):
     all_utterances_in_grammar = set(generate_sentences(ROOT_SYMBOL, rules))
     try:
         for command, parse in pairs:
+            print(command)
+            print(parse)
             if has_placeholders(command) or has_placeholders(parse):
                 # This case is almost certainly a bug with the annotations
                 print("Skipping pair for {} because it still has placeholders after expansion".format(

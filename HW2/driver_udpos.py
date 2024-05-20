@@ -7,23 +7,22 @@ logging.basicConfig(
     level=logging.INFO,
     datefmt='%Y-%m-%d %H:%M:%S')
 
-from Vocabulary import Vocabulary
-
-import random
 import torch
+import torch.nn as nn
+import torch.optim as optim
 from torch.utils.data import DataLoader
 from torchtext import datasets
 from torch.utils .data.backward_compatibility import worker_init_fn
+
+import nltk
+from nltk.stem import WordNetLemmatizer
+
 import matplotlib.pyplot as plt
+import random
+import string
 import numpy as np
-
-from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence, pad_sequence
-import torch.nn as nn
-
 from tqdm import tqdm
-
 import pickle
- 
 
 # Set random seed for python and torch to enable reproducibility (at least on the same hardware)
 random.seed(42)
@@ -32,18 +31,32 @@ torch.manual_seed(42)
 # Determine if a GPU is available for use, define as global variable
 dev = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
-#POS
-PARTS_OF_SPEECH = ['ADJ', 'ADP', 'ADV', 'AUX', 'CCONJ', 'DET', 'INTJ', 'NOUN', 'NUM', 'PART', 'PRON', 'PROPN', 'PUNCT', 'SCONJ', 'SYM', 'VERB', 'X']
-
-def get_part_of_speech_map():
-    pos_map = {}
-
-    for i, pos in enumerate(PARTS_OF_SPEECH):
-        pos_encoding = np.zeros((len(PARTS_OF_SPEECH)))
-        pos_encoding[i] = 1
-        pos_map[pos] = pos_encoding
+#Get lemmatizer
+nltk.download('wordnet')
+nltk.download('punkt')
     
-    return pos_map
+lemmatizer = WordNetLemmatizer()
+
+#Set idx for tags
+tag_to_idx = {}
+idx_to_tag = {}
+tags = ['ADJ', 'ADP', 'ADV', 'AUX', 'CCONJ', 'DET', 'INTJ', 'NOUN', 'NUM', 'PART', 'PRON', 'PROPN', 'PUNCT', 'SCONJ', 'SYM', 'VERB', 'X']
+for i, tag in enumerate(tags):
+    tag_to_idx[tag] = i
+    idx_to_tag[i] = tag
+
+#Get pre trained word vectors into embedding map
+path_to_glove_file = "glove.6B.50d.txt"
+
+embeddings_map = {}
+with open(path_to_glove_file) as f:
+    for line in f:
+        word, coefs = line.split(maxsplit=1)
+        coefs = np.fromstring(coefs, "f", sep=" ")
+        embeddings_map[word] = coefs
+
+emb_dim = 50
+hidden_dim = 50
 
 # Function to combine data elements from a batch
 def pad_collate(batch):
@@ -54,138 +67,81 @@ def pad_collate(batch):
 
     return xx, yy, x_lens
 
-# Visualizing POS tagged sentence
-def visualizeSentenceWithTags(text, udtags):
-    print(" Token "+"".join ([" "]*(15))+" POS Tag ")
-    print(" ---------------------------------")
-    for w, t in zip(text, udtags):
-        print(w + "".join([" "]*(20 - len(w))) +t)
+def map_seq_x(batch, to_ix):
+    seq = []
 
-#Build vocab
-def get_vocab(corpus):
-    words = []
-    for line in corpus:
-        words += line[0]
-
-    for i, w in enumerate(words):
-        words[i] = w.lower()
-
-    return Vocabulary(words)
-
-#Load word vectors
-def get_embedding_index():
-    path_to_glove_file = "glove.6B.50d.txt"
-
-    embeddings_index = {}
-    with open(path_to_glove_file) as f:
-        for line in f:
-            word, coefs = line.split(maxsplit=1)
-            coefs = np.fromstring(coefs, "f", sep=" ")
-            embeddings_index[word] = coefs
+    for s in batch:
+        seq += s
     
-    return embeddings_index
+    idxs = np.array([to_ix.get(lemmatizer.lemmatize(w.lower()), to_ix['unk']) for w in seq])
 
-# Prepare embedding matrix
-def get_embedding_matrix(vocab, embeddings_index):
-    num_tokens = vocab.size + 2
-    embedding_dim = 50
-    hits = 0
-    misses = 0
+    return torch.from_numpy(idxs).to(dev)
 
-    embedding_matrix = np.zeros((num_tokens, embedding_dim))
-    for word, i in vocab.word2idx.items():
-        embedding_vector = embeddings_index.get(word)
-        if embedding_vector is not None:
-            # Words not found in embedding index will be all-zeros.
-            # This includes the representation for "padding" and "OOV"
-            embedding_matrix[i] = embedding_vector
-            hits += 1
-        else:
-            misses += 1
+def map_seq_y(batch, to_ix):
+    seq = []
+
+    for s in batch:
+        seq += s
     
-    print("Converted %d words (%d misses)" % (hits, misses))
+    idxs = [to_ix.get(w, to_ix['X']) for w in seq]
 
-    return embedding_matrix
+    return torch.tensor(idxs, dtype=torch.long).to(dev)
 
-class PartOfSpeechLSTM(torch.nn.Module) :
+class BiLSTM(nn.Module):
 
-    def __init__(self, input_size=50, hidden_dim=100) :
-        super().__init__()
-
-        self.num_layers = 1
-        self.input_dim = input_size
+    def __init__(self, embedding_dim, hidden_dim, tagset_size):
+        super(BiLSTM, self).__init__()
         self.hidden_dim = hidden_dim
 
-        self.lstm = nn.LSTM(input_size=self.input_dim, hidden_size=self.hidden_dim, num_layers=self.num_layers, batch_first=True, bidirectional=True).to(dev)
-        self.fc = nn.Linear(self.hidden_dim*2, 300).to(dev)
-        self.output = nn.Linear(300, 17).to(dev)
-      
-        self.leaky = nn.LeakyReLU()
-        self.softmax = nn.Softmax()
+        self.lstm = nn.LSTM(embedding_dim, hidden_dim, batch_first=True, bidirectional=True).to(dev)
 
-    def forward(self, x, s):
-        out, (hn, cn) = self.lstm(x)
-        out = self.fc(out)
-        out = self.leaky(out)
-        out = self.output(out)
-        out = self.softmax(out)
+        self.fc = nn.Linear(hidden_dim*2, tagset_size).to(dev)
+
+    def forward(self, sentence):
+        lstm_out, _ = self.lstm(sentence.view(1, len(sentence), -1))
+        out = self.fc(lstm_out.view(len(sentence), -1))
         return out
 
+class EarlyStopper:
+    def __init__(self, patience=1, min_delta=0):
+        self.patience = patience
+        self.min_delta = min_delta
+        self.counter = 0
+        self.min_validation_loss = float('inf')
 
-    def __str__(self):
-        return "LSTM-"+str(self.hidden_dim)
+    def early_stop(self, validation_loss):
+        if validation_loss < self.min_validation_loss:
+            self.min_validation_loss = validation_loss
+            self.counter = 0
+        elif validation_loss > (self.min_validation_loss + self.min_delta):
+            self.counter += 1
+            if self.counter >= self.patience:
+                return True
+        return False
 
-def map_x_batch(vocab: Vocabulary, x_map, x_batch, max_len):
-
-    for line in x_batch:
-
-        diff = max_len - len(line)
-
-        if diff == 0:
-            continue
-        
-        for _ in range(diff):
-            line.append('UNK')
-
-    x_batch_vectors = []
-
-    for words in x_batch:
-        x_batch_vectors.append(list(map(lambda w: x_map[vocab.word2idx.get(w.lower(), vocab.word2idx['UNK'])], words)))
-
-    return x_batch_vectors
-
-def map_y_batch(y_map, y_batch, max_len):
-
-    for line in y_batch:
-
-        diff = max_len - len(line)
-
-        if diff == 0:
-            continue
-        
-        for _ in range(diff):
-            line.append('X')
-
-    y_batch_vectors = []
-
-    for pos_list in y_batch:
-        y_batch_vectors.append(list(map(lambda pos: y_map[pos], pos_list)))
-
-    return y_batch_vectors
-
-def train_model(model, train_loader, x_map, y_map, vocab, epochs=2000, lr=1e-3):
-    #Train loss
-    train_loss = []
-
+def train_model(model, train_loader, val_loader, x_map, y_map, epochs=31, lr=1e-3):
+    
     # Define a cross entropy loss function
-    crit = torch.nn.CrossEntropyLoss()
+    crit = nn.CrossEntropyLoss()
 
     # Collect all the learnable parameters in our model and pass them to an optimizer
     parameters = filter(lambda p: p.requires_grad, model.parameters())
     
     # Adam is a version of SGD with dynamic learning rates 
     # (tends to speed convergence but often worse than a well tuned SGD schedule)
-    optimizer = torch.optim.Adam(parameters, lr=lr, weight_decay=1e-5)
+    optimizer = optim.Adam(parameters, lr=lr, weight_decay=1e-5)
+
+    #Train loss and acc
+    train_loss = []
+    train_acc = []
+
+    #Validation loss and acc
+    val_loss = []
+    val_acc = []
+
+    #Early stop
+
+    early_stopper = EarlyStopper(patience=2, min_delta=.10)
 
     # Main training loop over the number of epochs
     for i in tqdm(range(epochs), desc="Training: "):
@@ -197,22 +153,12 @@ def train_model(model, train_loader, x_map, y_map, vocab, epochs=2000, lr=1e-3):
         correct = 0
 
         # for each batch in the dataset
-        for j, (x, y, lens) in enumerate(train_loader):
+        for _, (x, y, _) in enumerate(train_loader):
 
-            max_len = max(lens)
+            x = map_seq_x(x, x_map)
+            y = map_seq_y(y, y_map)
 
-            x = map_x_batch(vocab, x_map, x, max_len)
-            y = map_y_batch(y_map, y, max_len)
-
-            x = np.array(x)
-            y = np.array(y)
-
-            # push them to the GPU if we are using one
-            x = torch.from_numpy(x.astype(np.float32)).to(dev)
-            y = torch.from_numpy(y.astype(np.float32)).to(dev)
-
-            # predict the parity from our model
-            y_pred = model(x, lens)
+            y_pred = model(x)
             
             # compute the loss with respect to the true labels
             loss = crit(y_pred, y)
@@ -223,72 +169,216 @@ def train_model(model, train_loader, x_map, y_map, vocab, epochs=2000, lr=1e-3):
             optimizer.step()
 
             # compute loss and accuracy to report epoch level statitics
-            # pred = torch.max(y_pred, 1)[1]
-            # correct += (pred == y).float().sum()
+            pred = torch.max(y_pred, 1)[1]
+            correct += (pred == y).float().sum().item()
             sum_loss += loss.item()*y.shape[0]
             total += y.shape[0]
 
-        if i % 10 == 0:
-            logging.info("epoch %d train loss %.3f" % (i, sum_loss/total))#, val_loss, val_acc))
-            train_loss.append(sum_loss/total)
+        train_loss.append(sum_loss/total)
+        train_acc.append(correct/total)
 
-    
-    #Store model
-    logging.info('Saving model...')
-    torch.save({
-            'epoch': epochs,
-            'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'loss': loss,
-            }, 'model.pth')
-    
-    #Store loss
-    with open('train_loss.pickle', 'wb') as handle:
-        pickle.dump(train_loss, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        #Validation loop
+        with torch.no_grad():
+            model.eval()
+            sum_loss = 0.0
+            total = 0
+            correct = 0
 
-def main():
+            for _, (x, y, _) in enumerate(val_loader):
+
+                x = map_seq_x(x, x_map)
+                y = map_seq_y(y, y_map)
+
+                y_pred = model(x)
+
+                loss = crit(y_pred, y)
+
+                pred = torch.max(y_pred, 1)[1]
+                correct += (pred == y).float().sum().item()
+                sum_loss += loss.item()*y.shape[0]
+                total += y.shape[0]
+            
+            val_loss.append(sum_loss/total)
+            val_acc.append(correct/total)
+
+        if i % 2 == 0:
+
+            logging.info("epoch %d train loss %.3f, train acc %.3f val loss %.3f, val acc %.3f" % (i, train_loss[-1], train_acc[-1], val_loss[-1], val_acc[-1]))#, val_loss, val_acc))
+
+            #Store model
+            logging.info('Saving model...')
+            torch.save({
+                    'epoch': i,
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    }, 'model.pth')
+            
+            #Store loss
+            loss_acc = {'train_loss': train_loss, 
+                        'train_acc': train_acc,
+                        'val_loss': val_loss,
+                        'val_acc': val_acc
+                        }
+            pickle_loss_acc = {}
+
+            try:
+                with open('loss_acc.pickle', 'rb') as handle:
+
+                    pickle_loss_acc = pickle.load(handle)
+                    pickle_loss_acc['train_loss'] += train_loss
+                    pickle_loss_acc['train_acc'] += train_acc
+                    pickle_loss_acc['val_loss'] += val_loss
+                    pickle_loss_acc['val_acc'] += val_acc
+
+                    logging.info(f"Total Epochs: {len(pickle_loss_acc['train_loss'])}")
+
+            except FileNotFoundError:
+                logging.info('Writing new loss file...')
+                with open('loss_acc.pickle', 'wb') as handle:
+                    pickle.dump(loss_acc, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+            with open('loss_acc.pickle', 'wb') as handle:
+                pickle.dump(loss_acc, handle, protocol=pickle.HIGHEST_PROTOCOL)
+            
+            #Stop early
+            if early_stopper.early_stop(val_loss[-1]):
+                logging.info(f'Stopped early at {i} epochs')
+                break
+
+def train():
     # Create data pipeline
     train_data = datasets.UDPOS(split ='train')
+    val_data = datasets.UDPOS(split= 'valid')
 
-    # Make data loader
+    # Make data loaders
     train_loader = DataLoader(
         dataset = train_data, batch_size =5,
         shuffle = True, num_workers =1 ,
         worker_init_fn = worker_init_fn ,
         drop_last = True, collate_fn = pad_collate)
+    
+    val_loader = DataLoader(
+        dataset = val_data, batch_size =5,
+        shuffle = True, num_workers =1 ,
+        worker_init_fn = worker_init_fn ,
+        drop_last = True, collate_fn = pad_collate)
 
-    vocab = get_vocab(train_data)
-    emb_idx = get_embedding_index()
-    emb_mat = get_embedding_matrix(vocab, emb_idx)
-    pos_map = get_part_of_speech_map()
+    model = BiLSTM(emb_dim, hidden_dim, len(tag_to_idx))
 
-    # Build the model and put it on the GPU
-    logging.info("Building model")
-    model = PartOfSpeechLSTM()
-    model.to(dev) # move to GPU if cuda is enabled
+    train_model(model, train_loader, val_loader, x_map=embeddings_map, y_map=tag_to_idx)
 
-    train_model(model, train_loader, x_map=emb_mat, y_map=pos_map, vocab=vocab)
+def plot_train_val_loss():
+    with open('loss_acc.pickle', 'rb') as handle:
+        pickle_loss_acc = pickle.load(handle)
+    
+    epochs = range(1, len(pickle_loss_acc['train_loss']) + 1)
 
-    # mapped_x = []
-    # mapped_y = []
-    # last_x = 0
-    # last_y = 0
-    # for j, (x, y, l) in enumerate(train_loader):
-    #     mapped_x = map_x_batch(vocab, emb_mat, x, max(l))
-    #     mapped_y = map_y_batch(pos_map, y, max(l))
+    plt.plot(epochs, pickle_loss_acc['train_loss'], label='Training loss')
+    plt.plot(epochs, pickle_loss_acc['val_loss'], label='Validation loss')
+    plt.title('Training and Validation Loss')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
 
-    #     last_x = x[1]
-    #     last_y = y[1]
-    #     break
+    plt.tight_layout()
+    plt.show()
 
-    # print(np.array(mapped_y).shape)
-    # print(np.array(mapped_x).shape)
+def tag_sentence(sentence, model):
+
+    processed_sent = []
+    for w in sentence.split():
+        
+        if w[-1] in string.punctuation:
+            w = w[:-1] + " " + w[-1]
+        
+        if w[0] in string.punctuation:
+            w = w[0] + " " + w[1:]
+    
+        processed_sent.append(w)
+        
+    tokenized_sent = [w for w in " ".join(processed_sent).split()]
+
+    with torch.no_grad():
+        model.eval()
+
+        x = map_seq_x([tokenized_sent], embeddings_map)
+
+        y_pred = model(x)
+
+        pred = torch.max(y_pred, 1)[1]
+
+        print([idx_to_tag[idx] for idx in pred.tolist()])
+
+def test_model(model):
+    test_data = datasets.UDPOS(split= 'test')
+
+    test_loader = DataLoader(
+        dataset = test_data, batch_size =5,
+        shuffle = True, num_workers =1 ,
+        worker_init_fn = worker_init_fn ,
+        drop_last = True, collate_fn = pad_collate)
+
+    #Train loss and acc
+    test_acc = []
+
+    with torch.no_grad():
+        model.eval()
+        total = 0
+        correct = 0
+
+        for _, (x, y, _) in enumerate(test_loader):
+
+            x = map_seq_x(x, embeddings_map)
+            y = map_seq_y(y, tag_to_idx)
+
+            y_pred = model(x)
+
+            pred = torch.max(y_pred, 1)[1]
+            correct += (pred == y).float().sum().item()
+            total += x.shape[0]
+
+            test_acc.append(correct/total)
+    
+    #Plot test accuracy
+    words = range(1, len(test_acc) + 1)
+
+    plt.plot(words, test_acc, 'b', label='Validation accuracy')
+    plt.title('Test Accuracy')
+    plt.xlabel('Words')
+    plt.ylabel('Accuracy')
+
+    plt.show()
+
+# Visualizing POS tagged sentence
+def visualizeSentenceWithTags(text, udtags):
+    print (" Token "+"". join ([" " ]*(15) )+" POS Tag ")
+    print (" ---------------------------------")
+    for w , t in zip ( text , udtags ):
+        print (w+"".join([" "]*(20-len(w)))+t)
 
 if __name__== "__main__":
-    main()
+    #Train
+    #train()
+    plot_train_val_loss()
 
-    with open('train_loss.pickle', 'rb') as handle:
-        train_loss = pickle.load(handle)
+    #Test
+    model = BiLSTM(emb_dim, hidden_dim, len(tag_to_idx))
+    model.load_state_dict(torch.load('model.pth', map_location=dev)['model_state_dict'])
 
-    print(train_loss)
+    test_model(model)
+    
+    # Tag sentences
+    sent = 'The old man the boat.'
+    print(sent)
+    tag_sentence(sent, model)
+    print('')
 
+    sent = 'The complex houses married and single soldiers and their families.'
+    print(sent)
+    tag_sentence(sent, model)
+    print('')
+
+    sent = 'The man who hunts ducks out on weekends.'
+    print(sent)
+    tag_sentence(sent, model)
+    print('')

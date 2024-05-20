@@ -46,8 +46,8 @@ class Vocabulary:
 	    """
 
 		# Download packages
-		#nltk.download('wordnet')
-		#nltk.download('punkt')
+		nltk.download('wordnet')
+		nltk.download('punkt')
   
 		lemmatizer = WordNetLemmatizer()
 		
@@ -122,7 +122,7 @@ class Vocabulary:
 		#Add UNK token at the end of the mappings
 		word2idx['UNK'] = idx
 		idx2word[idx] = 'UNK'
-		freq['UNK'] = 0
+		freq['UNK'] = 1
 
 		return word2idx, idx2word, freq
 

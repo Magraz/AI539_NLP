@@ -343,6 +343,6 @@ def pairs_without_placeholders(rules, semantics, only_in_grammar=False):
             if only_in_grammar and not command in all_utterances_in_grammar:
                 continue
             out[tree_printer(command)] = tree_printer(parse)
+            print(out)
     except Exception:
-        print(out)
         return out

@@ -117,7 +117,7 @@ def main():
 
     different_test_dist = (args.test_categories != args.train_categories)
 
-    pairs_out_path = os.path.join('/home/AI539_NLP/project/gpsr_command_understanding/data', args.name)
+    pairs_out_path = os.path.join('~/AI539_NLP/project/data', args.name)
     train_out_path = os.path.join(pairs_out_path, "train.txt")
     val_out_path = os.path.join(pairs_out_path, "val.txt")
     test_out_path = os.path.join(pairs_out_path, "test.txt")
@@ -129,7 +129,7 @@ def main():
     if not os.path.isdir(pairs_out_path):
         os.mkdir(pairs_out_path)
     
-    grammar_dir = '/home/AI539_NLP/project/resources/generator2018'
+    grammar_dir = '~/AI539_NLP/project/resources/generator2018'
 
     generator = load_all_2018_by_cat(cmd_gen, grammar_dir)
 

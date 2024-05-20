@@ -117,7 +117,7 @@ def main():
 
     different_test_dist = (args.test_categories != args.train_categories)
 
-    pairs_out_path = os.path.join(os.path.abspath('/home/AI539_NLP/project/gpsr_command_understanding/data', args.name)
+    pairs_out_path = os.path.join('/home/AI539_NLP/project/gpsr_command_understanding/data', args.name)
     train_out_path = os.path.join(pairs_out_path, "train.txt")
     val_out_path = os.path.join(pairs_out_path, "val.txt")
     test_out_path = os.path.join(pairs_out_path, "test.txt")

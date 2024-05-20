@@ -346,3 +346,4 @@ def pairs_without_placeholders(rules, semantics, only_in_grammar=False):
     except Exception:
         print(f'length:{len(out)}')
         return out
+    return out

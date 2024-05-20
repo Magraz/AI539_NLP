@@ -344,6 +344,5 @@ def pairs_without_placeholders(rules, semantics, only_in_grammar=False):
                 continue
             out[tree_printer(command)] = tree_printer(parse)
     except Exception:
-        print(f'length:{len(out)}')
         return out
     return out

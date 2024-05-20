@@ -3,8 +3,6 @@ from os.path import join
 
 sys.path.append("../..")
 
-print(sys.path)
-
 from gpsr_command_understanding.anonymizer import Anonymizer
 
 import itertools
@@ -136,8 +134,6 @@ def main():
     pairs = [{}, {}, {}]
     if args.anonymized:
         pairs = [pairs_without_placeholders(rules, semantics) for _, rules, _, semantics in generator]
-    
-    print(pairs)
 
     # For now this only works with all data
     if args.groundings and len(args.train_categories) == 3:

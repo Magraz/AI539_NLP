@@ -136,6 +136,8 @@ def main():
     pairs = [{}, {}, {}]
     if args.anonymized:
         pairs = [pairs_without_placeholders(rules, semantics) for _, rules, _, semantics in generator]
+    
+    print(pairs)
 
     # For now this only works with all data
     if args.groundings and len(args.train_categories) == 3:

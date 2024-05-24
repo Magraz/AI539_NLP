@@ -1,5 +1,9 @@
 # coding: utf-8
 import os
+
+import sys
+sys.path.append("..")
+
 import unittest
 
 from gpsr_command_understanding.generation import generate_sentence_parse_pairs
